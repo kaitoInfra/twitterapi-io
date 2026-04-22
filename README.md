@@ -5,7 +5,7 @@ A [skills.sh](https://skills.sh) skill that teaches any AI coding agent (Claude 
 ## Install
 
 ```bash
-npx skills add <your-github-user>/twitterapi-io
+npx skills add kaitoInfra/twitterapi-io
 ```
 
 Once installed, ask your agent things like:
