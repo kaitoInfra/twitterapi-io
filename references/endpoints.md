@@ -1,208 +1,119 @@
 # twitterapi.io — Full endpoint catalog
 
-All endpoints are prefixed with `https://api.twitterapi.io` and require header `x-api-key: YOUR_KEY` (case-insensitive; docs write it as `X-API-Key`). Write endpoints additionally require a `login_cookie` field in the JSON body (see [write-operations.md](write-operations.md)).
+All endpoints are prefixed with `https://api.twitterapi.io` and require header `x-api-key: YOUR_KEY`. Write endpoints additionally require `login_cookies` **and** `proxy` fields in the JSON body (see [write-operations.md](write-operations.md)).
 
-> ⚠️ **Verify parameter names per endpoint.** twitterapi.io uses a mix of `camelCase` (`userName`, `tweetId`, `pageSize`, `userId`) and sometimes snake_case — each endpoint's canonical doc page at https://docs.twitterapi.io/api-reference/endpoint/... is authoritative if anything below disagrees with live API behavior.
+## Important conventions
+
+> ⚠️ **Parameter naming is inconsistent across endpoints.** There is no universal camelCase-or-snake_case rule. Some endpoints use `tweetId`, others `tweet_id`; some use `userName`, others `user_id`. **The tables below reflect what the live API actually accepts** — copy the exact parameter name for the endpoint you're calling. Do not guess or apply a style convention.
+
+> ⚠️ **Response shape is also endpoint-specific.** Some responses wrap payload in `data: {...}`, others spread fields at the top level, others return `{items[], has_next_page, next_cursor, status, msg}`. Check the "Response top-level keys" column or inspect a live response before parsing.
+
+**Error format** (HTTP 400 / 422 / 500): `{"detail": "<human-readable reason>"}` or `{"detail": [{"type":"missing","loc":[...],"msg":"..."}]}` (FastAPI style).
+**Semantic errors** (HTTP 200 but failed): `{"status":"error","msg":"..."}`.
 
 ---
 
-## Authentication
+## Authentication & account
 
-### POST `/twitter/user_login_v2`
-Exchange account credentials for a `login_cookie` used by all write endpoints.
-- Body: `{ "email_or_username": "...", "password": "...", "totp_secret": "OPTIONAL_2FA_SEED" }`
-- Returns: `{ "login_cookie": "...", "user_id": "...", "screen_name": "..." }`
-
-### GET `/oapi/my/info`
-Retrieve profile of the API-key owner (the twitterapi.io account, not a Twitter account).
+| Path | Method | Params (exact) | Notes |
+|---|---|---|---|
+| `/twitter/user_login_v2` | POST | body: `user_name`, `email`, `password`, `proxy`, optional `totp_secret` | All snake_case. See write-operations.md |
+| `/oapi/my/info` | GET | none | Returns API-key owner's balance: `{recharge_credits, total_bonus_credits}` |
 
 ---
 
 ## User endpoints (read)
 
-### GET `/twitter/user/info`
-Get a user profile by screen name.
-- `userName` (required) — e.g. `elonmusk`
+| Path | Method | Exact param | Response top-level keys |
+|---|---|---|---|
+| `/twitter/user/info` | GET | `userName` | `status, msg, data{id,name,userName,followers,following,favouritesCount,statusesCount,isBlueVerified,...}` |
+| `/twitter/user_about` | GET | `userName` | `status, msg, data{...extended bio}` |
+| `/twitter/user/batch_info_by_ids` | GET | `userIds` (comma-separated) | `status, msg, users[]` |
+| `/twitter/user/search` | GET | **`query`** (not `keyword`) | `users[]` |
+| `/twitter/user/last_tweets` | GET | `userName`, optional `cursor` | `status, msg, data{tweets[], pin_tweet}` |
+| `/twitter/user/tweet_timeline` | GET | `userId`, optional `cursor` | `status, msg, data{tweets[]}` |
+| `/twitter/user/mentions` | GET | `userName`, optional `cursor` | `tweets[], has_next_page, next_cursor` |
+| `/twitter/user/followers` | GET | `userName`, optional `cursor`, `pageSize` (default 200, range 20–200) | `followers[], has_next_page, next_cursor, status, msg, code` |
+| `/twitter/user/verifiedFollowers` | GET | **`user_id`** (not `userName`!), optional `cursor` | `followers[]` |
+| `/twitter/user/followings` | GET | `userName`, optional `cursor`, `pageSize` | `followings[], has_next_page, next_cursor` |
+| `/twitter/user/check_follow_relationship` | GET | `source_user_name`, `target_user_name` | `status, message, data{following, followed_by}` |
 
-### GET `/twitter/user_about`
-Extended bio / "about" block (bio, location, URL, join date).
-- `userName` (required)
-
-### GET `/twitter/user/batch_info_by_ids`
-Fetch multiple users by ID in one call.
-- `userIds` (required) — comma-separated or array
-
-### GET `/twitter/user/search`
-Search users by keyword.
-- `keyword` (required)
-
-### GET `/twitter/user/followers`
-Followers of a user. 200 per page, sorted by follow date (most recent first).
-- `userName` (required)
-- `cursor` (optional) — empty string for first page
-- `pageSize` (optional) — default 200, range 20–200
-- Returns: `{ followers[], next_cursor, has_next_page }`
-
-### GET `/twitter/user/verifiedFollowers`
-Only verified followers. 20 per page.
-- `userName` (required)
-- `cursor` (optional)
-
-### GET `/twitter/user/followings`
-Who a user follows. 200 per page, sorted by follow date.
-- `userName` (required)
-- `cursor` (optional)
-- `pageSize` (optional) — default 200, range 20–200
-
-### GET `/twitter/user/check_follow_relationship`
-Does source follow target?
-- `sourceId` (required)
-- `targetId` (required)
-
-### GET `/twitter/user/mentions`
-Tweets that mention a user.
-- `userName` (required)
-- `cursor` (optional)
+Each follower/following object: `{id, name, screen_name, userName, location, url, description, followers_count, following_count, verified, ...}`.
 
 ---
 
 ## Tweet endpoints (read)
 
-### GET `/twitter/tweets`
-Fetch multiple tweets by ID.
-- `tweetIds` (required) — comma-separated or array
+| Path | Method | Exact param | Response top-level keys |
+|---|---|---|---|
+| `/twitter/tweets` | GET | **`tweet_ids`** (comma-separated, snake_case) | `tweets[]` |
+| `/twitter/tweet/replies` | GET | `tweetId`, optional `cursor` | `tweets[], has_next_page, next_cursor` |
+| `/twitter/tweet/replies/v2` | GET | `tweetId`, `sort` (`Latest` / `Top`), optional `cursor` | `tweets[]` |
+| `/twitter/tweet/quotes` | GET | `tweetId`, optional `cursor` | `tweets[]` |
+| `/twitter/tweet/retweeters` | GET | `tweetId`, optional `cursor` | `users[]` (NOT `retweeters`) |
+| `/twitter/tweet/thread_context` | GET | `tweetId`, optional `cursor` | `tweets[]` |
+| `/twitter/article` | GET | **`tweet_id`** (snake_case) | `{article_content,...}` |
+| `/twitter/tweet/advanced_search` | GET | `query` (X advanced-search operators), optional `cursor` | `tweets[], has_next_page, next_cursor` |
 
-### GET `/twitter/user/last_tweets`
-A user's recent tweets (by screen name).
-- `userName` (required)
-- `cursor` (optional)
-
-### GET `/twitter/user/tweet_timeline`
-Timeline by user ID, sorted by `created_at`.
-- `userId` (required)
-- `cursor` (optional)
-
-### GET `/twitter/tweet/replies`
-Replies under a tweet. ~20 per page.
-- `tweetId` (required)
-- `cursor` (optional)
-
-### GET `/twitter/tweet/replies/v2`
-Replies with sort options (e.g. top vs. latest).
-- `tweetId` (required)
-- `sort` (optional)
-- `cursor` (optional)
-
-### GET `/twitter/tweet/quotes`
-Quote-tweets of a tweet. 20 per page.
-- `tweetId` (required)
-- `cursor` (optional)
-
-### GET `/twitter/tweet/retweeters`
-Users who retweeted a tweet. ~100 per page.
-- `tweetId` (required)
-- `cursor` (optional)
-
-### GET `/twitter/tweet/thread_context`
-Full thread a tweet belongs to.
-- `tweetId` (required)
-- `cursor` (optional)
-
-### GET `/twitter/article`
-Long-form "Article" content for a tweet (note: ~100 credits per call).
-- `tweetId` (required)
-
-### GET `/twitter/tweet/advanced_search`
-Full-text search with the same query operators as X's advanced-search UI.
-- `query` (required) — e.g. `from:elonmusk since:2025-01-01 until:2025-02-01 min_faves:1000`
-- `filters` (optional)
-- `cursor` (optional)
+Each tweet object: `{type, id, url, twitterUrl, text, source, retweetCount, replyCount, likeCount, quoteCount, viewCount, createdAt, author{...}}`.
 
 ---
 
-## Trends & Spaces & Lists
+## Trends / Spaces / Lists
 
-### GET `/twitter/trends`
-Trending topics by region.
-- `woeid` (required) — Yahoo "Where On Earth" ID (1 = worldwide, 23424977 = US)
-
-### GET `/twitter/spaces/detail`
-X Space (audio room) metadata.
-- `spaceId` (required)
-
-### GET `/twitter/list/tweets_timeline`
-Tweets from a curated list.
-- `listId` (required)
-- `cursor` (optional)
-
-### GET `/twitter/list/members`
-- `listId` (required)
-- `cursor` (optional)
-
-### GET `/twitter/list/followers`
-- `listId` (required)
-- `cursor` (optional)
+| Path | Method | Exact param | Notes |
+|---|---|---|---|
+| `/twitter/trends` | GET | `woeid` | 1=worldwide, 23424977=US. Returns `status, msg, trends[{trend:{name,target,rank}}]` |
+| `/twitter/spaces/detail` | GET | **`space_id`** (snake) | X Space metadata |
+| `/twitter/list/tweets_timeline` | GET | **`listId`** (camel) | `tweets[], has_next_page, next_cursor, status, msg` |
+| `/twitter/list/members` | GET | **`list_id`** (snake) | `members[]` — note different casing from tweets_timeline! |
+| `/twitter/list/followers` | GET | **`list_id`** (snake) | `followers[]` |
 
 ---
 
-## Community endpoints (read)
+## Community endpoints
 
-### GET `/twitter/community/info`
-- `communityId` (required)
-
-### GET `/twitter/community/tweets`
-- `communityId` (required)
-- `cursor` (optional)
-
-### GET `/twitter/community/get_tweets_from_all_community`
-All-communities firehose. 20 per page.
-- `cursor` (optional)
-
-### GET `/twitter/community/members`
-- `communityId` (required)
-- `cursor` (optional)
-
-### GET `/twitter/community/moderators`
-- `communityId` (required)
-- `cursor` (optional)
+| Path | Method | Exact param | Response |
+|---|---|---|---|
+| `/twitter/community/info` | GET | `community_id` | `{community_info{id,name,description,question,...}}` |
+| `/twitter/community/tweets` | GET | `community_id`, optional `cursor` | `tweets[]` |
+| `/twitter/community/get_tweets_from_all_community` | GET | **`query` (required)**, optional `cursor` | `tweets[]` |
+| `/twitter/community/members` | GET | `community_id`, optional `cursor` | `members[]` |
+| `/twitter/community/moderators` | GET | `community_id`, optional `cursor` | `moderators[]` |
 
 ---
 
-## Real-time monitoring — note the `/oapi/x_user_stream/` prefix (not `/twitter/`)
+## Real-time monitoring — `/oapi/x_user_stream/*`
 
-### POST `/oapi/x_user_stream/add_user_to_monitor_tweet`
-Track a user's new tweets in near real-time.
-- Body: `{ "userId": "..." }`
+Requires an **active monitoring subscription** on your account; returns `{status:"error","msg":"No active monitoring subscription"}` if not.
 
-### GET `/oapi/x_user_stream/get_user_to_monitor_tweet`
-List currently monitored accounts.
-
-### POST `/oapi/x_user_stream/remove_user_to_monitor_tweet`
-- Body: `{ "userId": "..." }`
+| Path | Method | Body (JSON) | Notes |
+|---|---|---|---|
+| `/oapi/x_user_stream/add_user_to_monitor_tweet` | POST | `{"user_id":"..."}` | Body JSON, not query string |
+| `/oapi/x_user_stream/get_user_to_monitor_tweet` | GET | — | Returns `data[{id_for_user, x_user_id, x_user_screen_name, is_monitor_tweet, is_monitor_profile}]` |
+| `/oapi/x_user_stream/remove_user_to_monitor_tweet` | POST | `{"user_id":"..."}` | |
 
 ---
 
-## Webhook filter rules — note the `/oapi/tweet_filter/` prefix
+## Webhook filter rules — `/oapi/tweet_filter/*`
 
-Define server-side rules; matching tweets are delivered to your configured webhook / websocket.
+Define server-side rules; matching tweets stream to your webhook / websocket (configured on the dashboard).
 
-### POST `/oapi/tweet_filter/add_rule`
-- Body: `{ "rule_text": "from:elonmusk OR #AI", "active": true }`
-
-### GET `/oapi/tweet_filter/get_rules`
-List all rules.
-
-### POST `/oapi/tweet_filter/update_rule`
-- Body: `{ "ruleId": "...", "rule_text": "...", "active": true }`
-
-### DELETE `/oapi/tweet_filter/delete_rule`
-- Body / param: `{ "ruleId": "..." }`
+| Path | Method | Body | Notes |
+|---|---|---|---|
+| `/oapi/tweet_filter/add_rule` | POST | `{"tag":"...","value":"<x-search-query>","interval_seconds":60,"is_effect":1}` | Fields: `tag`, `value`, `interval_seconds`, `is_effect`. Returns `rule_id` |
+| `/oapi/tweet_filter/get_rules` | GET | — | Returns `rules[{rule_id, user_id, tag, value, is_delete, created_at,...}]` |
+| `/oapi/tweet_filter/update_rule` | POST | `{"rule_id":"...", "tag":"...", "value":"...", ...}` | |
+| `/oapi/tweet_filter/delete_rule` | DELETE | `{"rule_id":"..."}` | **Body JSON**, NOT query string (query string returns 500) |
 
 ---
 
-## Write endpoints (all POST unless noted; all require `login_cookie` in body)
+## Write endpoints — see [write-operations.md](write-operations.md) for bodies
 
-See [write-operations.md](write-operations.md) for the login flow and example bodies.
+Every write requires **three** things in the body beyond the action-specific fields:
+1. `login_cookies` (plural, from `/twitter/user_login_v2`)
+2. `proxy` (proxy URL — configure in dashboard)
+3. action-specific fields, typically **snake_case** (`tweet_id`, `user_id`)
 
 | Capability | Method | Path |
 |---|---|---|
@@ -213,12 +124,12 @@ See [write-operations.md](write-operations.md) for the login flow and example bo
 | Retweet | POST | `/twitter/retweet_tweet_v2` |
 | Bookmark | POST | `/twitter/bookmark_tweet_v2` |
 | Unbookmark | POST | `/twitter/unbookmark_tweet_v2` |
-| Get bookmarks | POST | `/twitter/bookmarks_v2` |
+| List own bookmarks | POST | `/twitter/bookmarks_v2` |
 | Follow | POST | `/twitter/follow_user_v2` |
 | Unfollow | POST | `/twitter/unfollow_user_v2` |
 | Send DM | POST | `/twitter/send_dm_to_user` |
-| Upload media | POST | `/twitter/upload_media_v2` |
-| Update profile text | PATCH | `/twitter/update_profile_v2` |
+| Upload media | POST | `/twitter/upload_media_v2` (multipart, `file` field) |
+| Update profile | PATCH | `/twitter/update_profile_v2` |
 | Update avatar | PATCH | `/twitter/update_avatar_v2` |
 | Update banner | PATCH | `/twitter/update_banner_v2` |
 | Create community | POST | `/twitter/create_community_v2` |
@@ -228,27 +139,32 @@ See [write-operations.md](write-operations.md) for the login flow and example bo
 
 ---
 
-## Response shape
+## Pagination
 
-Most endpoints return:
+Both `next_cursor` and `has_next_page` appear in most list responses. **Terminate on `has_next_page === false`** — more reliable than the cursor string, which may be empty string, `null`, or the last valid value depending on endpoint.
 
-```json
-{
-  "status": "success",
-  "code": 0,
-  "message": "",
-  "data": { ... },
-  "next_cursor": "abc123",
-  "has_next_page": true
-}
+```python
+cursor = ""
+while True:
+    r = requests.get(url, params={..., "cursor": cursor}, headers=HEADERS).json()
+    yield from r.get("items", [])
+    if not r.get("has_next_page"):
+        break
+    cursor = r.get("next_cursor") or ""
 ```
 
-**Terminate pagination on `has_next_page === false`** — it's more reliable than checking `next_cursor` for empty string.
-
-Errors:
+## Response envelopes — three common shapes you'll see
 
 ```json
-{ "status": "error", "code": 401, "message": "invalid api key" }
+// 1. data-wrapped (user/info, user_about, last_tweets, tweet_timeline, trends, check_follow)
+{ "status": "success", "msg": "success", "data": { ... } }
+
+// 2. flat list (followers, followings, replies, quotes, advanced_search, mentions, community/tweets)
+{ "tweets": [...], "has_next_page": true, "next_cursor": "..." }
+// (may or may not also carry "status":"success","msg":"success","code":0)
+
+// 3. named top-level field (community/info, batch_info_by_ids)
+{ "status": "success", "msg": "success", "community_info": {...} }  // or "users": [...]
 ```
 
-Always check HTTP status *and* the body's `status` / `code`.
+When writing parsing code, prefer `r.get("tweets", r.get("data", {}).get("tweets", []))` over hard-coding one path.
