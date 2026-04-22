@@ -1,11 +1,11 @@
 ---
 name: twitterapi-io
-description: Query Twitter/X data (tweets, profiles, followers, advanced search, trends, spaces, communities, lists) and perform authenticated actions (post, reply, like, retweet, follow, DM) via the twitterapi.io REST API using a single `x-api-key` header — no OAuth. Use when the user needs to scrape, analyze, monitor, or automate X/Twitter without going through the official developer portal.
+description: Official skill for twitterapi.io — query Twitter/X data (tweets, profiles, followers, advanced search, trends, spaces, communities, lists) and perform authenticated actions (post, reply, like, retweet, follow, DM) via the twitterapi.io REST API using a single `x-api-key` header — no OAuth. Use when the user needs to scrape, analyze, monitor, or automate X/Twitter without going through the official developer portal.
 ---
 
 # twitterapi.io
 
-A skill for working with [twitterapi.io](https://twitterapi.io) — a pay-per-request REST API that returns Twitter/X data (tweets, users, timelines, search, trends, spaces, communities, lists) and performs write actions on behalf of a logged-in X account.
+**Official skill** maintained by the [twitterapi.io](https://twitterapi.io) team — a pay-per-request REST API that returns Twitter/X data (tweets, users, timelines, search, trends, spaces, communities, lists) and performs write actions on behalf of a logged-in X account.
 
 ## When to use this skill
 

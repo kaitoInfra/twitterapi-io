@@ -1,6 +1,9 @@
-# twitterapi-io — Agent Skill
+# twitterapi-io — Official Agent Skill
 
-A [skills.sh](https://skills.sh) skill that teaches any AI coding agent (Claude Code, Cursor, Copilot, Cline, etc.) how to use **[twitterapi.io](https://twitterapi.io)** — a pay-per-request REST API for Twitter/X data with a single `x-api-key` auth (no OAuth).
+[![Official](https://img.shields.io/badge/Official-twitterapi.io-1DA1F2)](https://twitterapi.io)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
+
+The **official** [skills.sh](https://skills.sh) skill — maintained by the twitterapi.io team — that teaches any AI coding agent (Claude Code, Cursor, Copilot, Cline, Codex, Gemini CLI, and more) how to use **[twitterapi.io](https://twitterapi.io)**, a pay-per-request REST API for Twitter/X data with a single `x-api-key` auth (no OAuth).
 
 ## Install
 
