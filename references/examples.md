@@ -36,7 +36,6 @@ class TwitterAPIIO:
     def get(self, path, **params):       return self._request("GET",   path, params=params)
     def post(self, path, body=None):     return self._request("POST",  path, json=body)
     def patch(self, path, body=None):    return self._request("PATCH", path, json=body)
-    def put(self, path, body=None):      return self._request("PUT",   path, json=body)
     def delete(self, path, body=None):   return self._request("DELETE", path, json=body)
 
     # Reads
@@ -140,81 +139,12 @@ console.log(`${info.userName}: ${info.followers.toLocaleString()} followers`);
 
 ---
 
-## v3 writes — bot-account API (recommended)
-
-One-time registration, then `user_name` is the handle for every action.
-
-```python
-import os, requests
-
-BASE = "https://api.twitterapi.io"
-H = {"x-api-key": os.environ["TWITTERAPI_IO_KEY"], "Content-Type": "application/json"}
-
-def register_bot(user_name, proxy, password=None, cookie=None, email=None, totp=None):
-    body = {"user_name": user_name, "proxy": proxy}
-    if password: body["password"] = password
-    if cookie:   body["cookie"] = cookie              # format: k=v&k=v
-    if email:    body["email"] = email
-    if totp:     body["totp_code"] = totp
-    r = requests.post(f"{BASE}/twitter/user_login_v3", json=body, headers=H)
-    r.raise_for_status(); return r.json()
-
-def send_tweet(user_name, text, community_id=None):
-    body = {"user_name": user_name, "text": text}   # NOTE: text in v3, not tweet_text
-    if community_id: body["community_id"] = community_id
-    return requests.post(f"{BASE}/twitter/send_tweet_v3", json=body, headers=H).json()
-
-def reply(user_name, text, reply_to_tweet_id):
-    body = {"user_name": user_name, "text": text, "reply_to_tweet_id": reply_to_tweet_id}
-    return requests.post(f"{BASE}/twitter/reply_tweet_v3", json=body, headers=H).json()
-
-def quote(user_name, text, tweet_id, tweet_username):
-    # tweet_username = author of the tweet being quoted (required in v3)
-    body = {"user_name": user_name, "text": text, "tweet_id": tweet_id, "tweet_username": tweet_username}
-    return requests.post(f"{BASE}/twitter/quote_tweet_v3", json=body, headers=H).json()
-
-def like(user_name, tweet_id):
-    return requests.post(f"{BASE}/twitter/like_tweet_v3",
-                         json={"user_name": user_name, "tweet_id": tweet_id}, headers=H).json()
-
-def retweet(user_name, tweet_id):
-    return requests.post(f"{BASE}/twitter/retweet_v3",   # not retweet_tweet_v3!
-                         json={"user_name": user_name, "tweet_id": tweet_id}, headers=H).json()
-
-def follow(user_name, target_user_name=None, target_user_id=None):
-    body = {"user_name": user_name}
-    if target_user_name: body["target_user_name"] = target_user_name
-    if target_user_id:   body["target_user_id"] = target_user_id
-    return requests.post(f"{BASE}/twitter/follow_v3", json=body, headers=H).json()
-
-def update_profile(user_name, name=None, bio=None, location=None, website=None, avatar=None, banner=None):
-    body = {"user_name": user_name}
-    for k, v in [("name",name),("bio",bio),("location",location),("website",website),
-                 ("avatar",avatar),("banner",banner)]:
-        if v is not None: body[k] = v
-    return requests.put(f"{BASE}/twitter/update_profile_v3", json=body, headers=H).json()
-
-
-# One-time setup
-register_bot("my_bot_handle",
-             proxy=os.environ["X_PROXY"],
-             password=os.environ["X_PASSWORD"],
-             email=os.environ["X_EMAIL"])
-
-# Ongoing use
-send_tweet("my_bot_handle", "Hello from v3!")
-like("my_bot_handle", "1234567890")
-follow("my_bot_handle", target_user_name="elonmusk")
-```
-
----
-
-## v2 writes — cookie-based (full-featured)
+## Writes — full login + write flow
 
 Use when you need scheduling, reports, list management, communities, or file upload.
 
 ```python
-import os, base64, json, requests
+import os, requests
 
 BASE = "https://api.twitterapi.io"
 H = {"x-api-key": os.environ["TWITTERAPI_IO_KEY"], "Content-Type": "application/json"}
@@ -232,7 +162,7 @@ def create_tweet(cookies, proxy, text, *, reply_to=None, quote_id=None,
     body = {
         "login_cookies": cookies,
         "proxy":         proxy,
-        "tweet_text":    text,                  # NOTE: tweet_text in v2 (not text)
+        "tweet_text":    text,                  # NOTE: tweet_text (not text)
     }
     if reply_to:     body["reply_to_tweet_id"] = reply_to   # NOT in_reply_to_tweet_id
     if quote_id:     body["quote_tweet_id"] = quote_id
@@ -267,7 +197,7 @@ def upload_media(cookies, proxy, path, media_category=None, is_long_video=False)
     r.raise_for_status(); return r.json()
 
 def update_profile(cookies, proxy, *, name=None, description=None, location=None, url=None):
-    # PATCH with JSON. Note: description (v2), NOT bio
+    # PATCH with JSON. Note: description (NOT bio)
     body = {"login_cookies": cookies, "proxy": proxy}
     for k, v in [("name",name),("description",description),("location",location),("url",url)]:
         if v is not None: body[k] = v

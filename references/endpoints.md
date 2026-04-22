@@ -2,15 +2,13 @@
 
 All endpoints are prefixed with `https://api.twitterapi.io` and require header `x-api-key: YOUR_KEY`.
 
-All paths, parameters, and body fields below were verified against the live backend source (`main.py`). Where the same action has multiple versions (e.g. v2 and v3), both are listed — they coexist and serve different use cases.
+All paths, parameters, and body fields below were verified against the live backend.
 
 ---
 
 ## Important conventions
 
 > ⚠️ **Parameter naming is per-endpoint.** There is no universal rule. The same concept may be `userName` on one route and `user_id` on another, `tweetId` here and `tweet_id` there. **Copy the exact name from the table below — do not normalize.**
-
-> ⚠️ **Two write-operation patterns** — v2 (cookie-based, client owns the session) and v3 (bot-account, server holds the session). See [write-operations.md](write-operations.md) for the decision matrix. v3 is simpler for most use cases.
 
 > ⚠️ **Response shape varies per endpoint.** Some wrap in `data: {...}`, some spread fields at top level (`tweets[], has_next_page, next_cursor`), some have a named top-level key (`community_info`, `users`). Check the "Response" column or a live response — don't assume a universal envelope.
 
@@ -24,14 +22,10 @@ All paths, parameters, and body fields below were verified against the live back
 
 | Path | Method | Body / Params | Notes |
 |---|---|---|---|
-| `/twitter/user_login_v2` | POST | body: `user_name`, `email`, `password`, `proxy` (all **required**); optional `totp_secret` | Returns `login_cookies` (base64-encoded JSON of a cookie dict) for v2 writes |
-| `/twitter/user_login_v3` | POST | body: `user_name`, `proxy`, plus **either** `cookie` (format `k=v&k=v`) **or** `password` (+ optional `email`, `totp_code`) | Registers a "bot account" stored server-side; later v3 calls reference it by `user_name` |
+| `/twitter/user_login_v2` | POST | body: `user_name`, `email`, `password`, `proxy` (all **required**); optional `totp_secret` | Returns `login_cookies` (base64-encoded JSON of a cookie dict) for write endpoints |
 | `/twitter/login_by_email_or_username` | POST | body: `username_or_email`, `password`, `proxy` | Legacy v1 — returns `auth_session` (older format) |
 | `/twitter/login_by_2fa` | POST | 2FA verification flow | |
 | `/twitter/logout` | POST | | |
-| `/twitter/get_my_x_account_detail_v3` | GET | body: `user_name` (unusual: GET reads body) | For v3 bot accounts |
-| `/twitter/delete_my_x_account_v3` | DELETE | body: `user_name` | |
-| `/twitter/account_v3` | DELETE | body: `user_name` | Alias for delete_my_x_account_v3 |
 | `/oapi/my/info` | GET | — | Returns your API-key account balance: `{recharge_credits, total_bonus_credits}` |
 
 ---
@@ -125,7 +119,7 @@ Requires an **active monitoring subscription**; returns `{status: "error", msg: 
 
 ---
 
-## v2 write endpoints — cookie-based (require `login_cookies` + `proxy` in body)
+## Write endpoints (require `login_cookies` + `proxy` in body)
 
 `login_cookies` is returned from `/twitter/user_login_v2` as a base64-encoded JSON string of the cookie dict. Pass it back verbatim; the server base64-decodes and parses it.
 
@@ -159,25 +153,7 @@ Requires an **active monitoring subscription**; returns `{status: "error", msg: 
 
 ---
 
-## v3 write endpoints — bot-account API (simpler, no per-call cookies/proxy)
-
-After registering a bot via `/twitter/user_login_v3`, subsequent calls only need the `user_name` of the bot account. Server handles cookies/proxy.
-
-| Capability | Method | Path | Body fields |
-|---|---|---|---|
-| Send tweet | POST | `/twitter/send_tweet_v3` | `user_name` (bot), `text`; optional `community_id`, `media_data_base64`, `media_type` |
-| Reply | POST | `/twitter/reply_tweet_v3` | `user_name`, `text`, `reply_to_tweet_id` |
-| Quote | POST | `/twitter/quote_tweet_v3` | `user_name`, `text`, `tweet_id`, `tweet_username` (author of the quoted tweet, required) |
-| Like | POST | `/twitter/like_tweet_v3` | `user_name`, `tweet_id` |
-| Retweet | POST | `/twitter/retweet_v3` | `user_name`, `tweet_id` |
-| Follow | POST | `/twitter/follow_v3` | `user_name`, **either** `target_user_id` **or** `target_user_name` |
-| Update profile | **PUT** | `/twitter/update_profile_v3` | `user_name`; optional `name`, **`bio`** (note v3 uses `bio`, v2 uses `description`), `location`, `website`, `avatar` (base64), `banner` (base64) |
-
-v3 write endpoints return the underlying action result (shape depends on the bot-layer implementation).
-
----
-
-## v1 legacy write endpoints (use `auth_session` — prefer v2 or v3 instead)
+## v1 legacy write endpoints (use `auth_session` — prefer v2 instead)
 
 | Path | Method | Body |
 |---|---|---|
@@ -187,7 +163,7 @@ v3 write endpoints return the underlying action result (shape depends on the bot
 | `/twitter/list/create` | POST | `auth_session`, `proxy`, `name`; optional `description`, `private` |
 | `/twitter/list/add_member` | POST | `auth_session`, `proxy`, `list_id`; `user_id` **or** `user_name` |
 | `/twitter/list/remove_member` | POST | same as add_member |
-| `/twitter/upload_image` | POST | | 
+| `/twitter/upload_image` | POST | `auth_session`, `image_url`, `proxy` |
 | `/twitter/upload_video` | POST | | 
 
 ---

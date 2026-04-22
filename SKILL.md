@@ -1,11 +1,11 @@
 ---
 name: twitterapi-io
-description: Official skill for twitterapi.io — query Twitter/X data (tweets, profiles, followers, advanced search, trends, spaces, communities, lists) and perform authenticated actions (post, reply, like, retweet, follow, DM) via the twitterapi.io REST API using a single `x-api-key` header — no OAuth. Supports both v2 (cookie-based) and v3 (bot-account) write patterns. Use when the user needs to scrape, analyze, monitor, or automate X/Twitter without going through the official developer portal.
+description: Official skill for twitterapi.io — query Twitter/X data (tweets, profiles, followers, advanced search, trends, spaces, communities, lists) and perform authenticated actions (post, reply, like, retweet, follow, DM) via the twitterapi.io REST API using a single `x-api-key` header — no OAuth. Use when the user needs to scrape, analyze, monitor, or automate X/Twitter without going through the official developer portal.
 ---
 
 # twitterapi.io
 
-**Official skill** maintained by the [twitterapi.io](https://twitterapi.io) team. Paths, parameters, and body fields in this skill are verified against the live backend source code.
+**Official skill** maintained by the [twitterapi.io](https://twitterapi.io) team. Paths, parameters, and body fields in this skill are verified against the live backend.
 
 ## When to use this skill
 
@@ -31,7 +31,7 @@ Trigger when the user wants any of:
 | Rate limit | ~200 req/s per client |
 | Pricing | ~$0.15/1k tweets, ~$0.18/1k profiles, $0.00015 minimum |
 
-## ⚠️ Three rules that catch people
+## ⚠️ Two rules that catch people
 
 ### Rule 1 — Parameter naming is per-endpoint
 
@@ -44,19 +44,21 @@ No universal snake_case or camelCase rule. Examples (all correct):
 
 **Copy the exact parameter name from [references/endpoints.md](references/endpoints.md). Don't normalize.**
 
-### Rule 2 — Two write patterns: v2 vs v3
+### Rule 2 — Writes need three things in body, not two
 
-| | **v2** (cookie-based) | **v3** (bot-account) |
-|---|---|---|
-| Auth | Body carries `login_cookies` + `proxy` on every call | Server stores session; body carries `user_name` + action fields |
-| Text field | `tweet_text` | `text` |
-| Profile "about" | `description` | `bio` |
-| Endpoint names | `create_tweet_v2`, `like_tweet_v2`, etc. | `send_tweet_v3`, `like_tweet_v3`, `retweet_v3` (no `_tweet`) |
-| Best for | Full features (scheduling, reports, list mgmt, communities, file uploads) | Simplicity; most automation use cases |
+Every write endpoint requires:
+1. `login_cookies` (**plural**, not `login_cookie`) — base64-encoded JSON from `/twitter/user_login_v2`
+2. `proxy` (HTTP/SOCKS proxy URL — configure in dashboard)
+3. Action-specific fields, almost always **snake_case** (`tweet_id`, `user_id`)
 
-**Default to v3 unless the user needs v2-only features.** Both live under the same `x-api-key`; a bot account registered once via `/twitter/user_login_v3` can be used by `user_name` on every subsequent v3 call.
+Plus key field-name traps:
+- `create_tweet_v2` text field is `tweet_text` (not `text`); reply field is `reply_to_tweet_id` (not `in_reply_to_tweet_id`)
+- `update_profile_v2` uses `description` (not `bio`)
+- `bookmarks_v2` uses `count` (not `pageSize`)
+- `send_dm_to_user`: `user_id` + `text`; optional `media_id` (singular)
+- Monitoring add uses `x_user_name`; remove uses `id_for_user` (different fields per endpoint!)
 
-See [references/write-operations.md](references/write-operations.md) for the full flow of each pattern.
+See [references/write-operations.md](references/write-operations.md) for full body shapes.
 
 ### Rule 3 — Response shape varies per endpoint
 
@@ -148,22 +150,7 @@ Webhook filter rules (`/oapi/tweet_filter/*`):
 | Update rule | POST | `/oapi/tweet_filter/update_rule` body `{rule_id, tag, value, interval_seconds?, is_effect?}` |
 | Delete rule | DELETE | `/oapi/tweet_filter/delete_rule` body `{rule_id}` (**body JSON, not query**) |
 
-Writes — **v3 (recommended)**:
-
-| Capability | Method | Path | Body |
-|---|---|---|---|
-| Register bot (once) | POST | `/twitter/user_login_v3` | `{user_name, proxy, cookie OR password, email?, totp_code?}` |
-| Send tweet | POST | `/twitter/send_tweet_v3` | `{user_name, text, community_id?, media_data_base64?, media_type?}` |
-| Reply | POST | `/twitter/reply_tweet_v3` | `{user_name, text, reply_to_tweet_id}` |
-| Quote | POST | `/twitter/quote_tweet_v3` | `{user_name, text, tweet_id, tweet_username}` (author of quoted) |
-| Like | POST | `/twitter/like_tweet_v3` | `{user_name, tweet_id}` |
-| Retweet | POST | `/twitter/retweet_v3` | `{user_name, tweet_id}` (note: not `retweet_tweet_v3`) |
-| Follow | POST | `/twitter/follow_v3` | `{user_name, target_user_name OR target_user_id}` |
-| Update profile | PUT | `/twitter/update_profile_v3` | `{user_name, name?, bio?, location?, website?, avatar?, banner?}` |
-| Bot status | GET | `/twitter/get_my_x_account_detail_v3` | body `{user_name}` |
-| Delete bot | DELETE | `/twitter/delete_my_x_account_v3` or `/twitter/account_v3` | body `{user_name}` |
-
-Writes — **v2 (cookie-based, full-featured)**. Require `login_cookies` + `proxy` in body. `login_cookies` is **base64(json(cookie_dict))** from `/twitter/user_login_v2`.
+Writes — require `login_cookies` + `proxy` in body. `login_cookies` is **base64(json(cookie_dict))** from `/twitter/user_login_v2`.
 
 | Capability | Method | Path | Key body fields (beyond login_cookies+proxy) |
 |---|---|---|---|
@@ -216,7 +203,7 @@ def iter_followers(user_name):
 { "status": "error", "msg": "No active monitoring subscription" }
 ```
 
-- `401` → bad `x-api-key` or (writes) expired `login_cookies`
+- `401` → bad `x-api-key` or expired `login_cookies`
 - `402` → top up balance at dashboard
 - `429` → rate-limited; exponential backoff
 - `400/422` → read `detail` — it names the missing/wrong field
@@ -230,10 +217,10 @@ Before a loop that could paginate for a long time (followers of a mega-account, 
 
 - Do **not** assume a universal param-casing rule — check endpoints.md
 - Do **not** use `login_cookie` (singular) — it's `login_cookies` plural
-- Do **not** forget `proxy` in v2 write bodies — every v2 write requires it
-- Do **not** send `text` for `create_tweet_v2` — v2 uses `tweet_text` (v3 uses `text`)
-- Do **not** use `bio` in `update_profile_v2` — v2 uses `description` (v3 uses `bio`)
-- Do **not** use `in_reply_to_tweet_id` for `create_tweet_v2` — it's `reply_to_tweet_id` (v1 used the old name)
+- Do **not** forget `proxy` in write bodies — every write requires it
+- Do **not** send `text` for `create_tweet_v2` — use `tweet_text`
+- Do **not** use `bio` in `update_profile_v2` — use `description`
+- Do **not** use `in_reply_to_tweet_id` for `create_tweet_v2` — it's `reply_to_tweet_id`
 - Do **not** send JSON to `upload_media_v2` / `update_avatar_v2` / `update_banner_v2` — they're **multipart/form-data**
 - Do **not** use `pageSize` for `bookmarks_v2` — it's `count`
 - Do **not** send `user_id` to monitoring add — it's `x_user_name`; remove uses `id_for_user`
