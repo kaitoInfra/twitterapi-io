@@ -16,39 +16,47 @@ class TwitterAPIIO:
         self.s = requests.Session()
         self.s.headers.update({"x-api-key": self.key})
 
-    def _get(self, path, **params):
+    def _request(self, method, path, *, params=None, json=None):
         for attempt in range(3):
-            r = self.s.get(f"{self.BASE}{path}", params=params, timeout=self.timeout)
+            r = self.s.request(method, f"{self.BASE}{path}",
+                               params=params, json=json, timeout=self.timeout)
             if r.status_code == 429:
+                time.sleep(2 ** attempt)
+                continue
+            if r.status_code >= 500:
                 time.sleep(2 ** attempt)
                 continue
             r.raise_for_status()
             return r.json()
         r.raise_for_status()
 
-    def _post(self, path, json=None):
-        r = self.s.post(f"{self.BASE}{path}", json=json, timeout=self.timeout)
-        r.raise_for_status()
-        return r.json()
+    def get(self, path, **params):
+        return self._request("GET", path, params=params)
+
+    def post(self, path, json=None):
+        return self._request("POST", path, json=json)
+
+    # ---- convenience wrappers ----
 
     def user_info(self, user_name):
-        return self._get("/twitter/user/info", userName=user_name)
+        return self.get("/twitter/user/info", userName=user_name)
 
     def user_last_tweets(self, user_name, cursor=""):
-        return self._get("/twitter/user/last_tweets", userName=user_name, cursor=cursor)
+        return self.get("/twitter/user/last_tweets", userName=user_name, cursor=cursor)
 
     def advanced_search(self, query, cursor=""):
-        return self._get("/twitter/tweet/advanced_search", query=query, cursor=cursor)
+        return self.get("/twitter/tweet/advanced_search", query=query, cursor=cursor)
 
-    def iter_followers(self, user_name):
+    def iter_followers(self, user_name, page_size=200):
         cursor = ""
         while True:
-            r = self._get("/twitter/user/followers", userName=user_name, cursor=cursor)
-            for u in r.get("followers", []):
+            page = self.get("/twitter/user/followers",
+                            userName=user_name, cursor=cursor, pageSize=page_size)
+            for u in page.get("followers", []):
                 yield u
-            cursor = r.get("next_cursor") or ""
-            if not cursor:
+            if not page.get("has_next_page"):
                 return
+            cursor = page.get("next_cursor", "")
 
 
 if __name__ == "__main__":
@@ -60,7 +68,7 @@ if __name__ == "__main__":
 
 ```python
 api = TwitterAPIIO()
-query = 'from:elonmusk since:2025-01-01 until:2025-02-01'
+query = 'from:elonmusk since:2025-01-01 until:2025-02-01 min_faves:1000'
 total = 0
 cursor = ""
 while True:
@@ -69,9 +77,9 @@ while True:
     total += len(tweets)
     for t in tweets:
         print(t["id"], t["text"][:80])
-    cursor = page.get("next_cursor") or ""
-    if not cursor:
+    if not page.get("has_next_page"):
         break
+    cursor = page.get("next_cursor", "")
 print(f"\n{total} tweets")
 ```
 
@@ -109,13 +117,14 @@ async function* iterFollowers(userName) {
   while (true) {
     const url = new URL(`${BASE}/twitter/user/followers`);
     url.searchParams.set("userName", userName);
+    url.searchParams.set("pageSize", "200");
     if (cursor) url.searchParams.set("cursor", cursor);
     const res = await fetch(url, { headers });
     if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
     const data = await res.json();
     for (const u of data.followers ?? []) yield u;
+    if (!data.has_next_page) return;
     cursor = data.next_cursor ?? "";
-    if (!cursor) return;
   }
 }
 
@@ -149,18 +158,47 @@ def post_tweet(cookie, text, reply_to=None):
     r.raise_for_status()
     return r.json()
 
+def like_tweet(cookie, tweet_id):
+    body = {"login_cookie": cookie, "tweetId": tweet_id}
+    r = requests.post(f"{BASE}/twitter/like_tweet_v2", json=body, headers=HEADERS)
+    r.raise_for_status()
+    return r.json()
+
+def follow(cookie, user_id):
+    body = {"login_cookie": cookie, "userId": user_id}
+    r = requests.post(f"{BASE}/twitter/follow_user_v2", json=body, headers=HEADERS)
+    r.raise_for_status()
+    return r.json()
+
 cookie = login(os.environ["X_EMAIL"], os.environ["X_PASSWORD"], os.environ.get("X_TOTP"))
 print(post_tweet(cookie, "Hello from twitterapi.io"))
 ```
 
-**Persist the cookie** so you don't re-login every run — store it encrypted and re-login only on `401`.
+**Persist the cookie** so you don't re-login every run — store it encrypted, re-login only on 401.
 
 ## Real-time monitoring without polling
 
 Instead of hitting `/user/last_tweets` on a timer:
 
-1. `POST /twitter/filter_rules` with a rule like `from:elonmusk OR #AI`
-2. Open the websocket endpoint shown in your dashboard
-3. Receive matched tweets as they're posted
+1. `POST /oapi/tweet_filter/add_rule` with a rule body like `{ "rule_text": "from:elonmusk OR #AI", "active": true }`
+2. Open the websocket endpoint shown in your dashboard, or configure a webhook URL
+3. Matched tweets stream to you as they're posted
 
-This is both cheaper and faster than polling, and avoids rate limits.
+This is both cheaper and faster than polling and avoids rate limits.
+
+## User-level monitoring (alternative)
+
+For just "tell me when @someone tweets":
+
+```python
+# add
+requests.post(f"{BASE}/oapi/x_user_stream/add_user_to_monitor_tweet",
+              json={"userId": "44196397"}, headers=HEADERS)
+
+# list what's being monitored
+requests.get(f"{BASE}/oapi/x_user_stream/get_user_to_monitor_tweet", headers=HEADERS).json()
+
+# stop
+requests.post(f"{BASE}/oapi/x_user_stream/remove_user_to_monitor_tweet",
+              json={"userId": "44196397"}, headers=HEADERS)
+```

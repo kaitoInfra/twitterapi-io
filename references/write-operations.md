@@ -3,9 +3,11 @@
 Any endpoint that **modifies state** on behalf of an X account (posting, liking, following, DM'ing) requires two credentials:
 
 1. `x-api-key` header — your twitterapi.io API key
-2. `login_cookie` field in the request body — a session token obtained by logging in the target X account
+2. `login_cookie` field in the JSON body — a session token obtained by logging in the target X account
 
-The `login_cookie` is **per-account**: each X account you want to control needs its own login.
+The `login_cookie` is **per-X-account**: each account you want to control needs its own login.
+
+All write endpoints in this file are **POST** (except profile updates, which are **PATCH**) and take a JSON body. None of them accept DELETE — the "reverse" operation is a separate endpoint (e.g. `unlike_tweet_v2`, `unfollow_user_v2`).
 
 ## Step 1 — Log in
 
@@ -17,7 +19,7 @@ Content-Type: application/json
 {
   "email_or_username": "user@example.com",
   "password": "...",
-  "totp_secret": "OPTIONAL_2FA_SECRET"
+  "totp_secret": "OPTIONAL_BASE32_2FA_SEED"
 }
 ```
 
@@ -33,14 +35,14 @@ Response:
 ```
 
 **Handling practice:**
-- Store `login_cookie` encrypted at rest (it's effectively a session token)
-- Cookies expire — catch `401` / `cookie_expired` errors and re-login
-- Never log or commit cookies to git
-- If the account has 2FA enabled, you must supply `totp_secret` (the base32 seed, not a 6-digit code); the server computes the current code
+- Store `login_cookie` encrypted at rest — it's effectively a session token
+- Cookies expire — catch `401` / `cookie_expired` and re-login
+- Never log or commit cookies to git; never pass via URL
+- If 2FA is enabled, supply `totp_secret` (the **base32 seed**, not a 6-digit code) — the server computes the current TOTP
 
 ## Step 2 — Call a write endpoint
 
-Every write endpoint follows the same pattern — include `login_cookie` in the JSON body alongside the action-specific fields.
+Every write endpoint follows the same pattern: include `login_cookie` in the JSON body alongside the action-specific fields.
 
 ### Create a tweet
 
@@ -83,47 +85,85 @@ Add `quoted_tweet_id`:
 
 ### Tweet with media
 
-1. Upload each media file via `POST /twitter/media/upload` → returns `media_id`
-2. Pass IDs in create_tweet:
+1. Upload each file via `POST /twitter/upload_media_v2` → returns `media_id`
+2. Pass IDs in the create body:
 
 ```json
 { "login_cookie": "...", "text": "photo!", "media_ids": ["abc", "def"] }
 ```
 
-### Like / unlike
+### Delete a tweet
 
 ```http
-POST   /twitter/like_tweet        { "login_cookie": "...", "tweet_id": "123" }
-DELETE /twitter/like_tweet        { "login_cookie": "...", "tweet_id": "123" }
+POST /twitter/delete_tweet_v2
+{ "login_cookie": "...", "tweetId": "1234567890" }
+```
+
+### Like / unlike (two separate endpoints)
+
+```http
+POST /twitter/like_tweet_v2     { "login_cookie": "...", "tweetId": "123" }
+POST /twitter/unlike_tweet_v2   { "login_cookie": "...", "tweetId": "123" }
 ```
 
 ### Retweet
 
 ```http
-POST /twitter/retweet_tweet       { "login_cookie": "...", "tweet_id": "123" }
+POST /twitter/retweet_tweet_v2  { "login_cookie": "...", "tweetId": "123" }
 ```
 
-### Follow / unfollow
+### Bookmark / unbookmark
 
 ```http
-POST   /twitter/follow_user       { "login_cookie": "...", "user_id": "44196397" }
-DELETE /twitter/follow_user       { "login_cookie": "...", "user_id": "44196397" }
+POST /twitter/bookmark_tweet_v2    { "login_cookie": "...", "tweetId": "123" }
+POST /twitter/unbookmark_tweet_v2  { "login_cookie": "...", "tweetId": "123" }
+```
+
+### List own bookmarks (authenticated read, `login_cookie` required)
+
+```http
+POST /twitter/bookmarks_v2
+{ "login_cookie": "...", "cursor": "" }
+```
+
+### Follow / unfollow (two separate endpoints)
+
+```http
+POST /twitter/follow_user_v2    { "login_cookie": "...", "userId": "44196397" }
+POST /twitter/unfollow_user_v2  { "login_cookie": "...", "userId": "44196397" }
 ```
 
 ### Send a DM
 
 ```http
-POST /twitter/send_dm_v2
+POST /twitter/send_dm_to_user
 {
   "login_cookie": "...",
-  "recipient_user_id": "44196397",
-  "text": "hi"
+  "userId": "44196397",
+  "message": "hi"
 }
+```
+
+### Update profile / avatar / banner (note: **PATCH**)
+
+```http
+PATCH /twitter/update_profile_v2   { "login_cookie": "...", "name": "...", "bio": "...", "location": "...", "url": "..." }
+PATCH /twitter/update_avatar_v2    { "login_cookie": "...", "image": "<base64 or upload_id>" }
+PATCH /twitter/update_banner_v2    { "login_cookie": "...", "image": "<base64 or upload_id>" }
+```
+
+### Communities
+
+```http
+POST /twitter/create_community_v2  { "login_cookie": "...", "name": "...", "description": "..." }
+POST /twitter/delete_community_v2  { "login_cookie": "...", "communityId": "..." }
+POST /twitter/join_community_v2    { "login_cookie": "...", "communityId": "..." }
+POST /twitter/leave_community_v2   { "login_cookie": "...", "communityId": "..." }
 ```
 
 ## Safety notes for automated writes
 
-- **Rate-limit yourself** — X (not twitterapi.io) will shadowban or suspend accounts that post/follow/like too fast. Conservative budget: < 50 follows/day, < 300 tweets/day, seconds of delay between actions.
-- **Don't batch writes without confirmation** — when the user asks for "follow everyone in this list", confirm the count before executing and offer a dry-run first.
-- **Respect X's terms of service** — automated spam, harassment, or mass-DM sending is against platform rules and can get the underlying account banned.
+- **Rate-limit yourself** — X (not twitterapi.io) will shadowban or suspend accounts that post/follow/like too fast. Conservative daily budget: < 50 follows, < 300 tweets, with seconds of delay between actions.
+- **Don't batch writes without confirmation** — if the user asks for "follow everyone in this list", confirm the count first and offer a dry-run.
+- **Respect X's terms of service** — automated spam, harassment, or mass-DM can get the underlying account banned.
 - **One cookie, one machine** — using the same `login_cookie` from many IPs simultaneously looks like a compromised account and will get flagged.
