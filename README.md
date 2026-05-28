@@ -102,11 +102,14 @@ That's all the agent needs.
 
 ```
 .
-├── SKILL.md                         # Entry point — auth, patterns, quick-ref tables
-└── references/
-    ├── endpoints.md                 # Full endpoint catalog (per-endpoint param tables)
-    ├── write-operations.md          # Login flow + every write endpoint body
-    └── examples.md                  # Runnable Python/Node code for common workflows
+├── README.md
+└── skills/
+    └── twitterapi-io/
+        ├── SKILL.md                 # Entry point — auth, patterns, quick-ref tables
+        └── references/
+            ├── endpoints.md         # Full endpoint catalog (per-endpoint param tables)
+            ├── write-operations.md  # Login flow + every write endpoint body
+            └── examples.md          # Runnable Python/Node code for common workflows
 ```
 
 The agent reads `SKILL.md` by default and only loads reference files when it needs the detail — keeping its context window small.
@@ -133,7 +136,7 @@ The agent reads `SKILL.md` by default and only loads reference files when it nee
 - User-level monitoring (per-user tweet/profile change stream)
 - WebSocket delivery for low-latency feeds
 
-[Full endpoint catalog →](./references/endpoints.md)
+[Full endpoint catalog →](./skills/twitterapi-io/references/endpoints.md)
 
 ---
 
