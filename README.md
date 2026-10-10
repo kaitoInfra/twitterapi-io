@@ -138,6 +138,10 @@ The agent reads `SKILL.md` by default and only loads reference files when it nee
 
 [Full endpoint catalog →](./skills/twitterapi-io/references/endpoints.md)
 
+### Read-only variant
+
+Need public data only? [`skills/twitterapi-io-read`](./skills/twitterapi-io-read/SKILL.md) is a read-only version of this skill: search, profiles, followers, posts, trends, lists and the hosted MCP server, with nothing but the `x-api-key` header. It contains no account login, cookies, proxies or write actions.
+
 ---
 
 ## Pricing (pay per request, no monthly minimum)
